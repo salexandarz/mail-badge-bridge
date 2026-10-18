@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
-"""Mail Badge Bridge - native messaging host.
+"""Mail Badge Bridge - native messaging host (Unified for Plasma/Unity & Cairo-Dock).
 
-Receives {"count": N} from the Betterbird/Thunderbird add-on and shows N as a
-taskbar badge via the Unity LauncherEntry D-Bus signal.
-
-Plasma removes a badge when the D-Bus connection that sent it disconnects,
-so this helper keeps one session-bus connection open for its whole life
-(minimal pure-Python D-Bus client, no extra packages needed)."""
+Receives {"count": N} from the Thunderbird add-on and updates the badge
+simultaneously on standard desktops (Plasma/Unity) and Cairo-Dock.
+"""
 
 import json
 import os
@@ -16,10 +13,8 @@ import struct
 import sys
 from urllib.parse import unquote
 
-# install.sh rewrites this line when you pick another mail app.
-APP_URI = "application://eu.betterbird.Betterbird.desktop"
-OBJECT_PATH = "/com/celestwatches/MailBadgeBridge"
-
+# URI aplikacije za standardne desktop okruženja (Plasma/Unity)
+APP_URI = "application://thunderbird.desktop"
 
 # --- minimal D-Bus wire protocol (little endian) ---------------------------
 
@@ -80,7 +75,7 @@ class SessionBus:
         self.serial = 0
         self._auth()
         self._send(1, "/org/freedesktop/DBus", "org.freedesktop.DBus", "Hello",
-                   destination="org.freedesktop.DBus")
+                     destination="org.freedesktop.DBus")
 
     @staticmethod
     def _connect():
@@ -102,7 +97,7 @@ class SessionBus:
                 s.connect(target)
                 return s
             except OSError:
-                s.close()  # try the next address, if any
+                s.close()
         raise RuntimeError(f"cannot connect to D-Bus session bus: {addr}")
 
     def _auth(self):
@@ -146,7 +141,6 @@ class SessionBus:
         self._drain()
 
     def _drain(self):
-        # Discard replies/signals sent to us so the socket buffer never fills.
         self.sock.setblocking(False)
         try:
             while self.sock.recv(4096):
@@ -157,18 +151,43 @@ class SessionBus:
             self.sock.setblocking(True)
 
     def emit_badge(self, count):
-        w = _W()
-        w.string(APP_URI)
-        props = [("count", "x", count), ("count-visible", "b", count > 0)]
+        quick_info = str(count) if count > 0 else ""
 
-        def write_entry(p):
-            w.align(8)
-            w.string(p[0])
-            _variant(w, p[1], p[2])
+        # 1. Pokušaj slanja signala za Plasma/Unity standardna okruženja
+        try:
+            w_unity = _W()
+            w_unity.string(APP_URI)
+            w_unity.array(8, [("count", "x", count)], lambda it: (w_unity.align(8), w_unity.string(it[0]), _variant(w_unity, it[1], it[2])))
 
-        w.array(8, props, write_entry)
-        self._send(4, OBJECT_PATH, "com.canonical.Unity.LauncherEntry", "Update",
-                   body_sig="sa{sv}", body=bytes(w.b))
+            self._send(
+                4,  # 4 = Signal
+                "/com/canonical/unity/launcherentry/thunderbird",
+                "com.canonical.Unity.LauncherEntry",
+                "Update",
+                body_sig="sa{sv}",
+                body=bytes(w_unity.b)
+            )
+        except Exception:
+            pass
+
+        # 2. Pokušaj slanja poziva za Cairo-Dock
+        try:
+            launcher_name = "01thunderbird"
+            w_cairo = _W()
+            w_cairo.string(quick_info)
+            w_cairo.string(launcher_name)
+
+            self._send(
+                1,  # 1 = Method Call
+                "/org/cairodock/CairoDock",
+                "org.cairodock.CairoDock",
+                "SetQuickInfo",
+                destination="org.cairodock.CairoDock",
+                body_sig="ss",
+                body=bytes(w_cairo.b)
+            )
+        except Exception:
+            pass
 
 
 # --- native messaging ------------------------------------------------------
@@ -182,7 +201,6 @@ def read_message():
 
 
 def main():
-    # If Betterbird kills the helper instead of closing stdin, still clear the badge.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     bus = SessionBus()
     try:
@@ -193,7 +211,7 @@ def main():
             bus.emit_badge(max(0, int(msg.get("count", 0))))
     finally:
         try:
-            bus.emit_badge(0)  # Betterbird closed: hide the badge
+            bus.emit_badge(0)  # Zatvaranje Thunderbirda: ukloni bedž
         except OSError:
             pass
 
