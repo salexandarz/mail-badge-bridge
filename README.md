@@ -1,5 +1,15 @@
 # Mail Badge Bridge
 
+## Extended Features in this Fork
+
+This fork builds upon the original `mail-badge-bridge` to provide **universal, cross-environment unread badge support**. In addition to standard desktop environments (Plasma/Unity), it now seamlessly integrates with **Cairo-Dock**.
+
+### Cairo-Dock Setup Requirements:
+To get the notification badges working correctly on your Thunderbird/Betterbird launcher in Cairo-Dock, ensure the following requirements are met:
+
+1. **D-Bus Enabled:** Make sure D-Bus communication and integration are active in your Cairo-Dock configuration.
+2. **Appearance & Captions:** Customize the visual style of the badge (such as text color, outlines, and background) inside Cairo-Dock under **Appearance** -> **Captions**.
+
 Shows the **unread count of all your inboxes** as a badge on the **Betterbird** (or Thunderbird) taskbar icon on Linux.
 
 <!-- Add a screenshot: save it as docs/screenshot.png and uncomment the line below.
