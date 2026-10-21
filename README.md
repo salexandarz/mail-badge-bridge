@@ -1,8 +1,15 @@
-# Mail Badge Bridge
+# Mail Badge Notifier
 
 ## Extended Features in this Fork
 
-This fork builds upon the original `mail-badge-bridge` to provide **universal, cross-environment unread badge support**. In addition to standard desktop environments (Plasma/Unity), it now seamlessly integrates with **Cairo-Dock**.
+This fork (`salexandarz/mail-badge-notifier`) builds upon the original `mail-badge-bridge` to transform it into a **complete, automated background email management and notification system**.
+
+Key additions include:
+
+- **Headless Background Service:** Runs Thunderbird/Betterbird in the background using a user-level `systemd` service (`--headless -no-remote`) so you receive mail notifications and taskbar badge updates continuously without keeping a full application window open.
+- **Smart GUI Wrapper:** Automatically manages application locks (`parent.lock`). Launching the app via your desktop launcher temporarily stops the background service to open the GUI cleanly, and automatically resumes background mode upon closing.
+- **KDE / Wayland Compatibility:** Configures launcher entries with absolute binary paths to ensure reliable launch behavior across desktop environments.
+- **Universal Taskbar Badge Support:** Seamlessly updates taskbar badges across KDE Plasma, Unity, and **Cairo-Dock**.
 
 ### Cairo-Dock Setup Requirements:
 To get the notification badges working correctly on your Thunderbird/Betterbird launcher in Cairo-Dock, ensure the following requirements are met:
@@ -10,7 +17,9 @@ To get the notification badges working correctly on your Thunderbird/Betterbird 
 1. **D-Bus Enabled:** Make sure D-Bus communication and integration are active in your Cairo-Dock configuration.
 2. **Appearance & Captions:** Customize the visual style of the badge (such as text color, outlines, and background) inside Cairo-Dock under **Appearance** -> **Captions**.
 
-Shows the **unread count of all your inboxes** as a badge on the **Betterbird** (or Thunderbird) taskbar icon on Linux.
+---
+
+Shows the **unread count of all your inboxes** as a badge on the **Thunderbird** (or Betterbird) taskbar icon on Linux.
 
 <!-- Add a screenshot: save it as docs/screenshot.png and uncomment the line below.
 ![Unread badge on the Betterbird taskbar icon](docs/screenshot.png)
@@ -18,89 +27,116 @@ Shows the **unread count of all your inboxes** as a badge on the **Betterbird** 
 
 ## Why
 
-Betterbird has an "App icon badge" setting, but on Linux it never sends the count to the taskbar. KDE Plasma supports these badges (through the Unity LauncherEntry D-Bus API), so this project fills the gap:
+Betterbird and Thunderbird have an "App icon badge" setting, but on Linux it often fails to send the count to the taskbar natively. KDE Plasma and other Linux desktop docks support these badges through the Unity `LauncherEntry` D-Bus API, so this project fills the gap:
 
-- **A small add-on** adds up the unread messages in the Inbox of every account.
-- **A small Python helper** (no extra packages needed) receives the number and shows it on the taskbar icon.
+- **A systemd user service** runs your mail client headless in the background.
+- **A small WebExtension** sums up unread messages across all account Inboxes.
+- **A Python helper** uses `gdbus` signals to update the taskbar badge in real time.
+- **A smart wrapper** safely handles opening and closing the main GUI window without profile conflicts.
 
-The badge updates as soon as mail arrives or you read something, and disappears when you close the app.
+The badge updates instantly when mail arrives or is read, and stays active even when the GUI window is closed.
+
+---
 
 ## Requirements
 
-- Betterbird or Thunderbird **128 or newer**, installed natively (not as Flatpak or Snap; see [Limitations](#limitations))
-- A taskbar that supports Unity LauncherEntry badges, e.g. **KDE Plasma**
-- Python 3
+- Thunderbird or Betterbird **128 or newer**, installed natively (not as Flatpak or Snap; see [Limitations](#limitations)).
+- A taskbar or dock supporting Unity `LauncherEntry` badges (e.g., **KDE Plasma**, **Cairo-Dock**).
+- `systemd` (user session enabled).
+- Python 3.
+
+---
 
 ## Install
 
+Clone the repository and run the installer:
+
 ```bash
-git clone https://github.com/bakatamas/mail-badge-bridge.git
-cd mail-badge-bridge
+git clone [https://github.com/salexandarz/mail-badge-notifier.git](https://github.com/salexandarz/mail-badge-notifier.git)
+cd mail-badge-notifier
 ./install.sh
-```
 
-For **Thunderbird**, use `./install.sh --thunderbird`. If your launcher has a different name, pass it directly:
+For Betterbird, pass --betterbird:
+Bash
 
-```bash
-ls /usr/share/applications ~/.local/share/applications | grep -i bird   # find the name
-./install.sh --desktop-file thunderbird.desktop
-```
+./install.sh --betterbird
 
-Then, in your mail app:
+If your launcher desktop file has a custom name:
+Bash
 
-1. Open **Add-ons and Themes → ⚙ → Install Add-on From File…**
-2. Pick `mail-badge-bridge.xpi` from the project folder.
-3. Restart the app.
+./install.sh --desktop-file custom-launcher.desktop
+
+Final Add-on Activation
+
+After running install.sh:
+
+    Open Thunderbird / Betterbird.
+
+    Go to Add-ons and Themes → ⚙ → Install Add-on From File…
+
+    Select mail-badge-bridge.xpi from the cloned repository folder.
+
+    Restart your mail app once to complete WebExtension registration.
 
 ## Uninstall
 
-Remove the add-on in **Add-ons and Themes**, then run:
+To clean up all systemd services, wrapper scripts, Native Messaging hosts, and desktop shortcuts:
+Bash
 
-```bash
 ./uninstall.sh
-```
+
+For Betterbird cleanup:
+Bash
+
+./uninstall.sh --betterbird
 
 ## Troubleshooting
+No badge at all
 
-**No badge at all**
+    Check Browser Console: Press Ctrl+Shift+J in your mail app and look for logs starting with mail-badge-bridge:
 
-- Press **Ctrl+Shift+J** in your mail app and look for lines starting with `mail-badge-bridge:`.
-  - *"No such native application"* means the helper isn't installed, so run `./install.sh` again.
-- Check that your taskbar shows badges at all. With the mail app running, run this (replace the name with your launcher):
+       # "No such native application" indicates the helper script isn't registered properly. Re-run ./install.sh.
 
-  ```bash
-  gdbus emit --session --object-path /test \
-    --signal com.canonical.Unity.LauncherEntry.Update \
-    "application://eu.betterbird.Betterbird.desktop" \
-    "{'count': <int64 5>, 'count-visible': <true>}"
-  ```
+    Test D-Bus Signal: Run the following command in terminal while the service is active (replace the desktop entry name if using Betterbird or a custom launcher):
+    Bash
 
-  If no **5** appears, the taskbar icon isn't linked to that launcher. Unpin the icon, start the app from the app menu, and pin it again.
-- To watch what the helper sends:
+    gdbus emit --session --object-path /test \
+      --signal com.canonical.Unity.LauncherEntry.Update \
+      "application://org.mozilla.Thunderbird.desktop" \
+      "{'count': <int64 5>, 'count-visible': <true>}"
 
-  ```bash
-  dbus-monitor "interface='com.canonical.Unity.LauncherEntry'"
-  ```
+    If no badge appears, unpin the taskbar icon, launch the app from your application menu, and pin it again.
 
-**Wrong number**
+    Monitor D-Bus Traffic:
+    Bash
 
-The count includes every folder marked as an Inbox, including a Local Folders Inbox if you have one.
+    dbus-monitor "interface='com.canonical.Unity.LauncherEntry'"
+
+## Wrong unread count
+
+The count includes every folder marked as an Inbox across all configured accounts, including local folders if present.
 
 ## Limitations
 
-- **Flatpak / Snap** versions of Betterbird or Thunderbird can't start the helper from inside their sandbox.
-- **GNOME** doesn't show these badges out of the box. Some dock extensions do, but this hasn't been tested.
-- Only tested on **Betterbird 153 + KDE Plasma 6.7** (CachyOS). Reports from other setups are very welcome.
+    Flatpak / Snap releases cannot trigger native messaging binaries outside their sandbox environment.
 
-## How it works
+    GNOME does not support LauncherEntry badges natively out of the box without specific dock extensions.
 
-1. The add-on listens for unread-count changes, adds up all Inboxes, and sends the total to the helper through *native messaging*.
-2. The helper keeps one D-Bus connection open and sends `com.canonical.Unity.LauncherEntry.Update` signals for your mail app's launcher.
-3. When the mail app closes, the helper clears the badge. If the helper dies unexpectedly, Plasma usually removes the badge itself once the helper's D-Bus connection closes.
+## How It Works
+
+    Service Management: The installer deploys a user systemd unit (thunderbird.service) running in --headless -no-remote mode.
+
+    Unread Tracking: The WebExtension listens for unread count changes and sends updates through Native Messaging.
+
+    Badge Bridge: The Python script receives messages from the extension and emits com.canonical.Unity.LauncherEntry.Update D-Bus signals.
+
+    GUI Switching: The wrapper (~/.local/bin/thunderbird) handles stopping the background service when you open the application interface, releasing parent.lock, and resuming background monitoring when closed.
 
 ## Credits
 
-Built by [Baka Tamás](https://github.com/bakatamas) together with **Claude** (Anthropic's AI assistant).
+    Originally created by Baka Tamás (mail-badge-bridge).
+
+    Headless systemd service integration, GUI wrapper automation, and Cairo-Dock support maintained by salexandarz.
 
 ## License
 
